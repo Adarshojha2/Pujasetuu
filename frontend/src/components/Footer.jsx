@@ -56,11 +56,11 @@ const Footer = () => {
             <ul className="space-y-2.5 text-sm text-gray-300">
               <li className="flex items-center space-x-2">
                 <Phone className="h-4 w-4 text-saffron-500" />
-                <span>+91 98765 43210</span>
+                <span>+91 98353 47781</span>
               </li>
               <li className="flex items-center space-x-2">
                 <Mail className="h-4 w-4 text-saffron-500" />
-                <span>support@pujasetu.com</span>
+                <span>adarshojha9709@gmail.com</span>
               </li>
               <li className="flex items-start space-x-2">
                 <MapPin className="h-4 w-4 text-saffron-500 mt-0.5" />
