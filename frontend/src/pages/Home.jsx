@@ -2,10 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useLanguage } from '../context/LanguageContext';
+import { useAuth } from '../context/AuthContext';
 import { Search, Compass, Calendar, Award, Star, Flame, Sparkles, Gift } from 'lucide-react';
 
 const Home = () => {
   const { t } = useLanguage();
+  const { API_URL } = useAuth();
   const navigate = useNavigate();
   const [trendingProducts, setTrendingProducts] = useState([]);
   const [featuredPandits, setFeaturedPandits] = useState([]);
@@ -24,11 +26,11 @@ const Home = () => {
       try {
         setLoading(true);
         // Fetch products
-        const prodRes = await axios.get('http://localhost:5000/api/products');
+        const prodRes = await axios.get(`${API_URL}/products`);
         setTrendingProducts(prodRes.data.slice(0, 4));
 
         // Fetch pandits
-        const panditRes = await axios.get('http://localhost:5000/api/pandits');
+        const panditRes = await axios.get(`${API_URL}/pandits`);
         setFeaturedPandits(panditRes.data.slice(0, 3));
       } catch (err) {
         console.error('Error fetching home page data:', err.message);

@@ -2,10 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { useCart } from '../context/CartContext';
+import { useAuth } from '../context/AuthContext';
 import { Search, SlidersHorizontal, Star, Heart, ShoppingCart } from 'lucide-react';
 
 const Marketplace = () => {
   const { addToCart, addToWishlist, removeFromWishlist, isInWishlist } = useCart();
+  const { API_URL } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // API State
@@ -51,7 +53,7 @@ const Marketplace = () => {
       if (rating) params.rating = rating;
       if (sort) params.sort = sort;
 
-      const res = await axios.get('http://localhost:5000/api/products', { params });
+      const res = await axios.get(`${API_URL}/products`, { params });
       setProducts(res.data);
     } catch (err) {
       console.error('Error loading products:', err.message);

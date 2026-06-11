@@ -11,7 +11,7 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   // Set API base URL. Using relative or port 5000 based on development configuration
-  const API_URL = 'http://localhost:5000/api';
+  const API_URL = 'https://backend-six-chi-zyle1aqkkw.vercel.app/api';
 
   useEffect(() => {
     if (token) {
