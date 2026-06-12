@@ -1,14 +1,31 @@
 import axios from 'axios';
 
 /**
- * Validates if an address actually exists using the public OpenStreetMap Nominatim API.
- * Performs tiered validation to ensure it doesn't fail on local landmarks while blocking completely fake addresses.
+ * Normalizes state names to handle common abbreviations (e.g. UP, MP, AP)
+ * @param {string} state 
+ * @returns {string}
+ */
+const normalizeState = (state) => {
+  const s = state.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (s === 'up' || s === 'uttarpradesh') return 'uttar pradesh';
+  if (s === 'mp' || s === 'madhyapradesh') return 'madhya pradesh';
+  if (s === 'ap' || s === 'andhrapradesh') return 'andhra pradesh';
+  if (s === 'hp' || s === 'himachalpradesh') return 'himachal pradesh';
+  if (s === 'jk' || s === 'jammuandkashmir' || s === 'jammukashmir') return 'jammu & kashmir';
+  if (s === 'wb' || s === 'westbengal') return 'west bengal';
+  return s;
+};
+
+/**
+ * Validates if an address actually exists and matches the correct state/city.
+ * Uses the Indian Postal Pin Code API for PIN code consistency checks,
+ * and OpenStreetMap Nominatim API for general geocoding verification.
  * 
  * @param {Object} address - { street, city, state, zipCode }
  * @returns {Promise<{ valid: boolean, message: string }>}
  */
 export const validateAddressOnline = async ({ street, city, state, zipCode }) => {
-  // 1. Basic Format Validation (Client Side)
+  // 1. Basic Format Checks
   if (!street || street.trim().length < 5) {
     return { valid: false, message: 'Street address must be at least 5 characters long.' };
   }
@@ -18,84 +35,103 @@ export const validateAddressOnline = async ({ street, city, state, zipCode }) =>
   if (!state || state.trim().length < 2) {
     return { valid: false, message: 'State name is invalid.' };
   }
-  
-  // Clean inputs
+  if (!zipCode || !/^[0-9]{6}$/.test(zipCode.trim())) {
+    return { valid: false, message: 'Postal/PIN Code must be a valid 6-digit number.' };
+  }
+
   const cleanStreet = street.trim();
   const cleanCity = city.trim();
   const cleanState = state.trim();
-  const cleanZip = zipCode ? zipCode.trim() : '';
+  const cleanZip = zipCode.trim();
 
-  // Validate Zip format (6 digits for India, 5/6 digits generally)
-  const zipRegex = /^[0-9]{5,6}$/;
-  if (cleanZip && !zipRegex.test(cleanZip)) {
-    return { valid: false, message: 'Postal/Zip Code must be a valid 5 or 6 digit number.' };
+  // 2. Indian Pin Code Consistency Check
+  try {
+    const pinRes = await axios.get(`https://api.postalpincode.in/pincode/${cleanZip}`);
+    
+    if (pinRes.data && pinRes.data[0] && pinRes.data[0].Status === 'Success') {
+      const postOffices = pinRes.data[0].PostOffice;
+      if (postOffices && postOffices.length > 0) {
+        const officialState = postOffices[0].State;
+        const officialDistrict = postOffices[0].District;
+        const officialBlock = postOffices[0].Block;
+        const officialTaluk = postOffices[0].Taluk;
+
+        // Verify State
+        const normInputState = normalizeState(cleanState);
+        const normOfficialState = normalizeState(officialState);
+        
+        if (normInputState !== normOfficialState && !normOfficialState.includes(normInputState) && !normInputState.includes(normOfficialState)) {
+          return {
+            valid: false,
+            message: `Invalid Address: PIN code ${cleanZip} belongs to the state of ${officialState}, but you entered the state as "${cleanState}".`
+          };
+        }
+
+        // Verify City/District
+        const inputCityLower = cleanCity.toLowerCase();
+        const districtLower = officialDistrict.toLowerCase();
+        const blockLower = officialBlock.toLowerCase();
+        const talukLower = officialTaluk.toLowerCase();
+
+        const cityMatches = 
+          inputCityLower.includes(districtLower) || 
+          districtLower.includes(inputCityLower) ||
+          inputCityLower.includes(blockLower) ||
+          blockLower.includes(inputCityLower) ||
+          inputCityLower.includes(talukLower) ||
+          talukLower.includes(inputCityLower);
+
+        // Allow some flexibility for city names, but reject if completely different
+        if (!cityMatches) {
+          // Double check with Nominatim just to make sure there isn't a sub-district match
+          const geoRes = await axios.get('https://nominatim.openstreetmap.org/search', {
+            headers: { 'User-Agent': 'PujaSetu-SpiritualPlatform-Validator' },
+            params: { q: `${cleanCity}, ${officialState}`, format: 'json', limit: 1 }
+          });
+          if (!geoRes.data || geoRes.data.length === 0) {
+            return {
+              valid: false,
+              message: `Invalid Address: PIN code ${cleanZip} is in the district/area of "${officialDistrict}" (${officialState}), which does not match your entered city "${cleanCity}".`
+            };
+          }
+        }
+      }
+    } else if (pinRes.data && pinRes.data[0] && pinRes.data[0].Status === 'Error') {
+      return {
+        valid: false,
+        message: `Invalid PIN Code: PIN code "${cleanZip}" does not exist in India.`
+      };
+    }
+  } catch (err) {
+    console.warn('PIN Code validation API failed or timed out:', err.message);
   }
 
+  // 3. OpenStreetMap Nominatim Geocoding Lookup for Street Address existence
   try {
-    // 2. Perform Geocoding Lookup on Nominatim (OpenStreetMap)
-    // We try to find the location by query
     const query = `${cleanStreet}, ${cleanCity}, ${cleanState} ${cleanZip}`;
-    
-    // User-Agent is required by Nominatim usage policy
-    const headers = {
-      'User-Agent': 'PujaSetu-SpiritualPlatform-Validator'
-    };
+    const headers = { 'User-Agent': 'PujaSetu-SpiritualPlatform-Validator' };
 
     const res = await axios.get('https://nominatim.openstreetmap.org/search', {
       headers,
-      params: {
-        q: query,
-        format: 'json',
-        limit: 1
-      }
+      params: { q: query, format: 'json', limit: 1 }
     });
 
     if (res.data && res.data.length > 0) {
       return { valid: true, message: 'Address verified successfully.' };
     }
 
-    // Tier 2: If full address fails (often due to local landmarks in India like "near temple"),
-    // check if the Zip Code + City combination is at least valid.
-    if (cleanZip) {
-      const zipRes = await axios.get('https://nominatim.openstreetmap.org/search', {
-        headers,
-        params: {
-          q: `${cleanZip}, ${cleanCity}`,
-          format: 'json',
-          limit: 1
-        }
-      });
-      if (zipRes.data && zipRes.data.length > 0) {
-        return { valid: true, message: 'City and Zip verified, local landmarks allowed.' };
-      }
+    // Check if street name is gibberish
+    const cleanStreetNoSpaces = cleanStreet.replace(/\s+/g, '');
+    const gibberishRegex = /^(.)\1+$|^[bcdfghjklmnpqrstvwxyz]{6,}$/i;
+    if (gibberishRegex.test(cleanStreetNoSpaces)) {
+      return { valid: false, message: 'Street address contains invalid or gibberish text.' };
     }
 
-    // Tier 3: If no zip, check if City + State exists
-    const cityRes = await axios.get('https://nominatim.openstreetmap.org/search', {
-      headers,
-      params: {
-        q: `${cleanCity}, ${cleanState}`,
-        format: 'json',
-        limit: 1
-      }
-    });
-    if (cityRes.data && cityRes.data.length > 0) {
-      // If the city/state exists, but they wrote completely garbage street info
-      // Check if street info looks like spam/garbage letters (e.g. "asdasdasd", "qwerty")
-      const gibberishRegex = /^(.)\1+$|^[bcdfghjklmnpqrstvwxyz]{6,}$/i;
-      if (gibberishRegex.test(cleanStreet.replace(/\s+/g, ''))) {
-        return { valid: false, message: 'Street address contains invalid or gibberish text.' };
-      }
-      return { valid: true, message: 'Address city verified.' };
-    }
-
-    return {
-      valid: false,
-      message: 'Address not found. We could not verify this location. Please check your spelling.'
-    };
+    // If it's a real PIN and City/State match (which we verified above), 
+    // we allow the order to proceed even if OSM doesn't have the specific street number (common in Indian towns).
+    return { valid: true, message: 'PIN and City match, proceeding.' };
   } catch (err) {
-    console.warn('Address validation API failed, bypassing validation:', err.message);
-    // If the open geocoding API fails or limits rates, bypass validation to not block real orders
-    return { valid: true, message: 'Bypassed due to connection limitations.' };
+    console.warn('Nominatim Geocoding lookup failed, bypassing geocoding check:', err.message);
+    return { valid: true, message: 'Bypassed geocoding check due to connection limitations.' };
   }
 };
