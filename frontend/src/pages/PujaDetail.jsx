@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
+import { validateAddressOnline } from '../utils/addressValidator';
 import { Calendar as CalendarIcon, MapPin, Clock, ShieldCheck, UserCheck, CreditCard, Sparkles, CheckCircle2 } from 'lucide-react';
 
 const PujaDetail = () => {
@@ -100,6 +101,14 @@ const PujaDetail = () => {
     try {
       setErrorMsg('');
       setIsSubmitting(true);
+
+      // Validate address online via geocoding service
+      const addrValidation = await validateAddressOnline({ street, city: bookingCity, state, zipCode });
+      if (!addrValidation.valid) {
+        setErrorMsg(addrValidation.message);
+        setIsSubmitting(false);
+        return;
+      }
 
       const bookingPayload = {
         panditId: selectedPandit._id,

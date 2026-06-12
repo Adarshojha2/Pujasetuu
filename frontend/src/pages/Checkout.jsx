@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
+import { validateAddressOnline } from '../utils/addressValidator';
 import { CreditCard, CheckCircle2, ChevronRight, MapPin, Building, ShieldCheck } from 'lucide-react';
 
 const Checkout = () => {
@@ -87,6 +88,14 @@ const Checkout = () => {
     try {
       setErrorMsg('');
       setIsSubmitting(true);
+
+      // Validate shipping address online via open geocoding API
+      const addrValidation = await validateAddressOnline(shippingAddress);
+      if (!addrValidation.valid) {
+        setErrorMsg(addrValidation.message);
+        setIsSubmitting(false);
+        return;
+      }
 
       const productsPayload = cart.products.map(item => ({
         productId: item.productId?._id || item.productId,
